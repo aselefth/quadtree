@@ -1,6 +1,15 @@
 use rand::prelude::*;
 use raylib::prelude::*;
 
+const HEIGHT: i32 = 640;
+const WIDTH: i32 = 800;
+
+macro_rules! point_bbox {
+    ($w:expr, $h:expr, $r:expr) => {
+        ($w - $r as i32, $h - $r as i32, 0 + $r as i32)
+    };
+}
+
 #[derive(Clone, Debug)]
 struct QuadTree {
     max_points: usize,
@@ -19,6 +28,10 @@ struct QuadTree {
 struct Point {
     x: i32,
     y: i32,
+    speed_x: i8,
+    speed_y: i8,
+    r: f32,
+    color: Color,
 }
 
 impl QuadTree {
@@ -124,7 +137,6 @@ impl QuadTree {
 
     // pass coordinates to find the quad
     fn find_quad(&self, x: i32, y: i32) -> Option<&QuadTree> {
-        println!("{}, {}, {x}, {y}", self.x, self.y);
         if (self.x > x || self.x + self.w < x) || (self.y > y || self.y + self.h / 2 < y) {
             return None; //since we dont need to traverse children cus point is out of bbox
         }
@@ -146,7 +158,7 @@ impl QuadTree {
 
         if let Some(points) = &self.points {
             for &point in points.iter() {
-                d.draw_circle(point.x, point.y, 2.0, Color::BLACK);
+                d.draw_circle(point.x, point.y, point.r, point.color);
             }
         } else {
             let selfs = vec![&self.lt, &self.lb, &self.rt, &self.rb];
@@ -157,26 +169,86 @@ impl QuadTree {
             }
         }
     }
-}
 
-static HEIGHT: i32 = 640;
-static WIDTH: i32 = 640;
+    fn move_point(&mut self) -> () {
+        if let Some(points) = &mut self.points {
+            let collisions = points.clone();
+            for point in points.iter_mut() {
+                match point.x {
+                    _ if point.x == WIDTH - point.r as i32 => {
+                        point.speed_x = -1;
+                    }
+                    _ if point.x == point.r as i32 => {
+                        point.speed_x = 1;
+                    }
+                    _ => (),
+                };
+                match point.y {
+                    _ if point.y == HEIGHT - point.r as i32 => {
+                        point.speed_y = -1;
+                    }
+                    _ if point.y == point.r as i32 => {
+                        point.speed_y = 1;
+                    }
+                    _ => (),
+                };
+                let collisioned_points: Vec<&Point> = collisions
+                    .iter()
+                    .filter(|&p| {
+                        p.x != point.x
+                            && p.y != point.y
+                            && i32::abs(p.x - point.x) <= 2 * (p.r as i32)
+                            && i32::abs(p.y - point.y) <= 2 * (p.r as i32)
+                    })
+                    .collect();
+                if collisioned_points.len() > 0 {
+                    point.speed_x = -point.speed_x;
+                    point.speed_y = -point.speed_y;
+                }
+                point.x += point.speed_x as i32;
+                point.y += point.speed_y as i32;
+            }
+        }
+    }
+}
 
 pub fn main() {
     let mut qt = QuadTree::new(4, WIDTH, HEIGHT, 0, 0);
-    for _ in 0..1_000 {
+    for _ in 0..1 {
         qt.insert_point(Point {
             x: (random::<f64>() * (WIDTH as f64)) as i32,
             y: (random::<f64>() * (HEIGHT as f64)) as i32,
+            speed_x: 1,
+            speed_y: -1,
+            r: 12.0,
+            color: Color::RED,
+        });
+        qt.insert_point(Point {
+            x: (random::<f64>() * (WIDTH as f64)) as i32,
+            y: (random::<f64>() * (HEIGHT as f64)) as i32,
+            speed_x: 1,
+            speed_y: 1,
+            r: 12.0,
+            color: Color::GREEN,
+        });
+        qt.insert_point(Point {
+            x: (random::<f64>() * (WIDTH as f64)) as i32,
+            y: (random::<f64>() * (HEIGHT as f64)) as i32,
+            speed_x: 1,
+            speed_y: 1,
+            r: 12.0,
+            color: Color::BLUE,
         });
     }
 
     let (mut rl, thread) = raylib::init().size(WIDTH, HEIGHT).title("Quadtree").build();
 
+    rl.set_target_fps(120);
     while !rl.window_should_close() {
         let mut d = rl.begin_drawing(&thread);
 
         d.clear_background(Color::WHITE);
         qt.draw(&mut d);
+        qt.move_point();
     }
 }
